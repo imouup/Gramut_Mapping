@@ -518,6 +518,53 @@ if __name__ == "__main__":
       print("❤️ 映射结果:\n", pjt)
 
 
+# ----------------------
+
+from mpl_toolkits.mplot3d import Axes3D  # 只要导入一下即可启用 3D
+
+def plot_srgb_colors(srgb_array):
+    """
+    把一组 sRGB 颜色（三个通道均在 0–1）在 3D 空间里画出来。
+    srgb_array: numpy.ndarray，shape = (N, 3)，每一行是 [R, G, B]，值都在 [0,1]。
+    """
+    # 检查输入
+    srgb_array = np.asarray(srgb_array, dtype=np.float32)
+    if srgb_array.ndim != 2 or srgb_array.shape[1] != 3:
+        raise ValueError("输入必须是形状 (N, 3) 的数组，且每个元素都在 [0,1]。")
+    if srgb_array.min() < 0 or srgb_array.max() > 1:
+        raise ValueError("sRGB 通道值必须在 0 到 1 之间。")
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # 拆出 R、G、B 三个坐标
+    xs = srgb_array[:, 0]
+    ys = srgb_array[:, 1]
+    zs = srgb_array[:, 2]
+
+    # 在三维中画散点，用本身的 RGB 值来做颜色
+    ax.scatter(xs, ys, zs,
+               c=srgb_array,      # 每个点的颜色就是对应的 [R,G,B]
+               marker='o',
+               s=50,             # 点的大小，可根据需要调
+               depthshade=True)
+
+    ax.set_xlabel('R')
+    ax.set_ylabel('G')
+    ax.set_zlabel('B')
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_zlim(0, 1)
+    ax.set_title('sRGB Colors in 3D (R–G–B)')
+
+    plt.tight_layout()
+    plt.show()
+
+
+# —— 下面是示例用法 ——
+    # 举几个典型颜色
+
+plot_srgb_colors(pjt)
 
 
 
