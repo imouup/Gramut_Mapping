@@ -4,13 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d1d4314d-43bf-4ea4-8af0-621b6ea57dec" name="更改" comment="添加README">
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Figure_1.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Figure_1_3d.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Q2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/toolkits.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="d1d4314d-43bf-4ea4-8af0-621b6ea57dec" name="更改" comment="Q2已完成：伪逆部分、标记部分">
+      <change beforePath="$PROJECT_DIR$/Q1.py" beforeDir="false" afterPath="$PROJECT_DIR$/Q1.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Q2.py" beforeDir="false" afterPath="$PROJECT_DIR$/Q2.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -113,7 +109,7 @@
       <workItem from="1747448195047" duration="31311000" />
       <workItem from="1747551517103" duration="12561000" />
       <workItem from="1747743210846" duration="3488000" />
-      <workItem from="1747827255569" duration="9222000" />
+      <workItem from="1747827255569" duration="10312000" />
     </task>
     <task id="LOCAL-00001" summary="Q1完成">
       <option name="closed" value="true" />
@@ -139,7 +135,15 @@
       <option name="project" value="LOCAL" />
       <updated>1747743898701</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Q2已完成：伪逆部分、标记部分">
+      <option name="closed" value="true" />
+      <created>1747837248951</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1747837248951</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -149,55 +153,46 @@
     <MESSAGE value="Q1完成" />
     <MESSAGE value="Q1增加了绘制3D图的模块" />
     <MESSAGE value="添加README" />
-    <option name="LAST_COMMIT_MESSAGE" value="添加README" />
+    <MESSAGE value="Q2已完成：伪逆部分、标记部分" />
+    <option name="LAST_COMMIT_MESSAGE" value="Q2已完成：伪逆部分、标记部分" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>301</line>
+          <line>302</line>
           <option name="timeStamp" value="6" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>312</line>
+          <line>313</line>
           <option name="timeStamp" value="7" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>414</line>
+          <line>415</line>
           <option name="timeStamp" value="8" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>383</line>
+          <line>384</line>
           <option name="timeStamp" value="9" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>384</line>
+          <line>385</line>
           <option name="timeStamp" value="12" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>309</line>
+          <line>310</line>
           <option name="timeStamp" value="13" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>283</line>
+          <line>284</line>
           <option name="timeStamp" value="15" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/Q1.py</url>
-          <line>517</line>
-          <option name="timeStamp" value="16" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/Q2.py</url>
-          <line>97</line>
-          <option name="timeStamp" value="30" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
