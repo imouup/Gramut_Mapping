@@ -3,3 +3,6 @@
 ## Q1 
 ### idea
 * MLP
+
+## Q2
+* Pinv + MLP
