@@ -347,7 +347,7 @@ class MLP_withflags(nn.Module):
 class MLP_oss_only(nn.Module):
       def __init__(self):
             super(MLP_oss_only,self).__init__()
-            self.proj = nn.Linear(5, 256)  # 1.投影层
+            self.proj = nn.Linear(4, 256)  # 1.投影层
             self.net = nn.Sequential(
                   nn.Linear(256, 256),  # 2.隐藏层1 256
                   nn.LayerNorm(256),
@@ -481,6 +481,7 @@ def train_mlp_withflag(
                   optimizer.step() # 更新参数
 
                   running_loss += loss.item() * p4.size(0) # 单个batch的loss总和
+
 
             train_e_loss = running_loss / len(train_dts)
             train_losses.append(train_e_loss)
@@ -727,7 +728,42 @@ def train():
             torch.save(model.state_dict(), file_name)
 
 
+def project(ckpt_path, p4, nn):
+      '''
+      此函数用于加载模型并推理
 
+      :param ckpt_path: 模型的路径
+      :param p4: 输入四基色下的坐标
+      :param nn: 传入神经网络的类名
+      :return: 五基色下的坐标
+      '''
+      device = 'cuda' if torch.cuda.is_available() else 'cpu'
+      model = nn().to(device)
+
+      checkpoint_pth = ckpt_path
+      state_dict = torch.load(checkpoint_pth, map_location=device)
+      model.load_state_dict(state_dict)
+      p4 = torch.from_numpy(p4).float()
+      p4 = p4.to(device)
+
+      model.eval()
+      with torch.no_grad():
+            project_p5_t = model(p4)
+            project_p5 = project_p5_t.cpu().numpy()  # 转为numpy数组
+
+            # 计算loss
+            XYZ_org = p42XYZ_ts(p4)  # 将要映射的四基色下的坐标转为XYZ坐标
+            LAB_org = XYZ2LAB(XYZ_org)  # 将要映射的XYZ坐标转为LAB坐标
+            direct_pro_v = torch.clamp(p4, 0, 1)  # 求直接映射的坐标
+            XYZ_srgb = p52XYZ_ts(project_p5_t)  # 映射后五基色下的坐标转为XYZ坐标
+            LAB_srgb = XYZ2LAB(XYZ_srgb)  # 映射后XYZ坐标转为LAB坐标
+            delta_E = CIE2000(LAB_srgb, LAB_org)  # 求CIEDE2000
+            loss_de = huber(delta_E, torch.zeros_like(delta_E))
+            loss_m = mse(project_p5_t, direct_pro_v)
+            loss = alpha * loss_de + (1 - alpha) * loss_m  # loss由CIEDE2000与MSE加权求得
+            loss = loss.cpu().numpy()
+
+      return project_p5, loss
 
 
 
