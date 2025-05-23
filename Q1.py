@@ -371,6 +371,9 @@ def train_mlp(
                   LAB_org = XYZ2LAB(XYZ_org)
                   # 求出若直接投影到边界的sRGB坐标
                   direct_pro_t = torch.clamp(sRGB_org,0,1)
+                  direct_pro_t_xyz = sRGB2XYZ_ts(direct_pro_t)
+                  direct_pro_t_lab = XYZ2LAB(direct_pro_t_xyz)
+
 
                   # 正向传播,得到(batch_size,3)的包含映射后的sRGB坐标的矩阵
                   srgb_lin = model(bt)
@@ -382,7 +385,7 @@ def train_mlp(
                   # 计算 CIEDE2000 delta E
                   delta_E = CIE2000(LAB_srgb,LAB_org)
                   loss_de = huber(delta_E,torch.zeros_like(delta_E))
-                  loss_m =mse(srgb_lin,direct_pro_t)
+                  loss_m =mse(LAB_srgb,direct_pro_t_lab)  # mes只能反映欧氏距离，因此要在LAB下比较
                   loss = torch.mean(alpha * loss_de + (1 - alpha) * loss_m)
 
                   # 反向传播
@@ -406,6 +409,8 @@ def train_mlp(
                         LAB_org = XYZ2LAB(XYZ_org)
 
                         direct_pro_v = torch.clamp(sRGB_org, 0, 1)
+                        direct_pro_v_xyz = sRGB2XYZ_ts(direct_pro_v)
+                        direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
 
                         srgb_lin = model(bt)
                         XYZ_srgb = sRGB2XYZ_ts(srgb_lin)
@@ -413,7 +418,7 @@ def train_mlp(
 
                         delta_E = CIE2000(LAB_srgb, LAB_org)
                         loss_de_val = huber(delta_E, torch.zeros_like(delta_E))
-                        loss_m_val = mse(srgb_lin, direct_pro_v)
+                        loss_m_val = mse(LAB_srgb, direct_pro_v_lab)
                         loss_val = torch.mean(alpha * loss_de_val + (1 - alpha) * loss_m_val)
                         val_running_loss += loss_val.item() * bt.size(0)
 
@@ -445,10 +450,13 @@ def project(ckpt_path,bt):
 
       :param ckpt_path: 模型的路径
       :param bt: 输入BT2020坐标
-      :return: sRGB坐标
+      :return: sRGB坐标与包含loss的
       '''
       device = 'cuda' if torch.cuda.is_available() else 'cpu'
       model = MLP().to(device)
+      # 创建 Huber 与mse 损失函数，不进行聚合
+      huber = nn.SmoothL1Loss(reduction='none')
+      mse = nn.MSELoss(reduction='none')
 
       checkpoint_pth = ckpt_path
       state_dict = torch.load(checkpoint_pth, map_location=device)
@@ -461,7 +469,22 @@ def project(ckpt_path,bt):
             project_srgb_t = model(bt)
             project_srgb = project_srgb_t.cpu().numpy() # 转为numpy数组
 
-      return project_srgb
+
+            # 计算loss
+            XYZ_org = BT2XYZ_ts(bt)  # 将要映射的BT2020坐标转为XYZ坐标
+            LAB_org = XYZ2LAB(XYZ_org)  # 将要映射的XYZ坐标转为LAB坐标
+            direct_pro_v = torch.clamp(bt, 0, 1) # 求直接映射的坐标
+            direct_pro_v_xyz = sRGB2XYZ_ts(direct_pro_v)
+            direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
+            XYZ_srgb = sRGB2XYZ_ts(project_srgb_t) # 映射后sRGB坐标转为XYZ坐标
+            LAB_srgb = XYZ2LAB(XYZ_srgb) # 映射后XYZ坐标转为LAB坐标
+            delta_E = CIE2000(LAB_srgb, LAB_org) # 求CIEDE2000
+            loss_de = huber(delta_E, torch.zeros_like(delta_E))
+            loss_m = mse(project_srgb_t, direct_pro_v_lab).mean(dim=1)
+            loss = alpha * loss_de + (1 - alpha) * loss_m  # loss由CIEDE2000与MSE加权求得
+            loss = loss.cpu().numpy()
+
+      return project_srgb, loss
 
 def train():
       print(f'✨使用设备: {device}')
@@ -508,14 +531,14 @@ if __name__ == "__main__":
       srgb_to_xyz_mat = srgb_to_xyz_mat.to(device)
 
       # 训练
-      #train()
+      train()
 
       # 推理
-      proj_pts = GetPoints(100)
-      proj_pts,_ = filter(proj_pts)
-      ckpt_path = "models/Q1/20250518_180458.pth" #模型路径
-      pjt = project(ckpt_path, proj_pts)
-      print("❤️ 映射结果:\n", pjt)
+      # proj_pts = GetPoints(100)
+      # proj_pts,_ = filter(proj_pts)
+      # ckpt_path = "models/Q1/20250518_180458.pth" #模型路径
+      # pjt,loss = project(ckpt_path, proj_pts)
+      # print("❤️ 映射结果:\n", pjt)
 
 
 # ----------------------
@@ -564,7 +587,7 @@ def plot_srgb_colors(srgb_array):
 # —— 下面是示例用法 ——
     # 举几个典型颜色
 
-plot_srgb_colors(pjt)
+# plot_srgb_colors(pjt)
 
 
 
