@@ -460,6 +460,8 @@ def train_mlp_withflag(
                   LAB_org = XYZ2LAB(XYZ_org)
                   # 求出若直接投影到边界的坐标
                   direct_pro_t = torch.clamp(four2five_ts(p4_noflag,XYZ4_ts, XYZ5_ts),0,1)
+                  direct_pro_t_xyz = p52XYZ_ts(direct_pro_t)
+                  direct_pro_t_lab = XYZ2LAB(direct_pro_t_xyz)
 
                   # 正向传播,得到(batch_size,5)的包含映射后的五基色下坐标的矩阵
                   p5_lin = model(p4)
@@ -472,7 +474,7 @@ def train_mlp_withflag(
                   # 计算 CIEDE2000 delta E
                   delta_E = CIE2000(LAB_p5,LAB_org)
                   loss_de = huber(delta_E,torch.zeros_like(delta_E))
-                  loss_m =mse(p5_lin,direct_pro_t)
+                  loss_m =mse(LAB_p5,direct_pro_t_lab)
                   loss = torch.mean(alpha * loss_de + (1 - alpha) * loss_m)
 
                   # 反向传播
@@ -499,7 +501,9 @@ def train_mlp_withflag(
                         XYZ_org = p42XYZ_ts(p4_noflag)
                         LAB_org = XYZ2LAB(XYZ_org)
                         # 求出若直接投影到边界的坐标
-                        direct_pro_t = torch.clamp(four2five_ts(p4_noflag, XYZ4_ts, XYZ5_ts), 0, 1)
+                        direct_pro_v = torch.clamp(four2five_ts(p4_noflag, XYZ4_ts, XYZ5_ts), 0, 1)
+                        direct_pro_v_xyz = p52XYZ_ts(direct_pro_v)
+                        direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
 
                         # 正向传播,得到(batch_size,5)的包含映射后的五基色下坐标的矩阵
                         p5_lin = model(p4)
@@ -512,7 +516,7 @@ def train_mlp_withflag(
                         # 计算 CIEDE2000 delta E
                         delta_E = CIE2000(LAB_p5, LAB_org)
                         loss_de_val = huber(delta_E, torch.zeros_like(delta_E))
-                        loss_m_val = mse(p5_lin, direct_pro_t)
+                        loss_m_val = mse(LAB_p5, direct_pro_v_lab)
                         loss_val = torch.mean(alpha * loss_de_val + (1 - alpha) * loss_m_val)
                         val_running_loss += loss_val.item() * p4.size(0)
 
@@ -614,6 +618,8 @@ def train_mlp_oos_only(
                   LAB_org = XYZ2LAB(XYZ_org)
                   # 求出若直接投影到边界的坐标
                   direct_pro_t = torch.clamp(four2five_ts(p4,XYZ4_ts, XYZ5_ts),0,1)
+                  direct_pro_t_xyz = p52XYZ_ts(direct_pro_t)
+                  direct_pro_t_lab = XYZ2LAB(direct_pro_t_xyz)
 
                   # 正向传播,得到(batch_size,5)的包含映射后的五基色下坐标的矩阵
                   p5_lin = model(p4)
@@ -626,7 +632,7 @@ def train_mlp_oos_only(
                   # 计算 CIEDE2000 delta E
                   delta_E = CIE2000(LAB_p5,LAB_org)
                   loss_de = huber(delta_E,torch.zeros_like(delta_E))
-                  loss_m =mse(p5_lin,direct_pro_t)
+                  loss_m =mse(LAB_p5,direct_pro_t_lab)
                   loss = torch.mean(alpha * loss_de + (1 - alpha) * loss_m)
 
                   # 反向传播
@@ -650,7 +656,9 @@ def train_mlp_oos_only(
                         XYZ_org = p42XYZ_ts(p4)
                         LAB_org = XYZ2LAB(XYZ_org)
                         # 求出若直接投影到边界的坐标
-                        direct_pro_t = torch.clamp(four2five_ts(p4, XYZ4_ts, XYZ5_ts), 0, 1)
+                        direct_pro_v = torch.clamp(four2five_ts(p4, XYZ4_ts, XYZ5_ts), 0, 1)
+                        direct_pro_v_xyz = p52XYZ_ts(direct_pro_v)
+                        direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
 
                         # 正向传播,得到(batch_size,5)的包含映射后的五基色下坐标的矩阵
                         p5_lin = model(p4)
@@ -663,7 +671,7 @@ def train_mlp_oos_only(
                         # 计算 CIEDE2000 delta E
                         delta_E = CIE2000(LAB_p5, LAB_org)
                         loss_de_val = huber(delta_E, torch.zeros_like(delta_E))
-                        loss_m_val = mse(p5_lin, direct_pro_t)
+                        loss_m_val = mse(LAB_p5, direct_pro_v_lab)
                         loss_val = torch.mean(alpha * loss_de_val + (1 - alpha) * loss_m_val)
                         val_running_loss += loss_val.item() * p4.size(0)
 
@@ -711,7 +719,7 @@ def train():
             )
 
             # 保存模型
-            file_name = f'models/Q2/all{datetime.strftime(datetime.now(), "%Y%m%d_%H%M%S")}.pth'
+            file_name = f'models/Q2/all/{datetime.strftime(datetime.now(), "%Y%m%d_%H%M%S")}.pth'
             torch.save(model.state_dict(), file_name)
 
       elif choose == 2:
@@ -724,11 +732,11 @@ def train():
             )
 
             # 保存模型
-            file_name = f'models/Q2/oss{datetime.strftime(datetime.now(), "%Y%m%d_%H%M%S")}.pth'
+            file_name = f'models/Q2/oss/{datetime.strftime(datetime.now(), "%Y%m%d_%H%M%S")}.pth'
             torch.save(model.state_dict(), file_name)
 
 
-def project(ckpt_path, p4, nn):
+def project(ckpt_path, p4, network):
       '''
       此函数用于加载模型并推理
 
@@ -738,7 +746,10 @@ def project(ckpt_path, p4, nn):
       :return: 五基色下的坐标
       '''
       device = 'cuda' if torch.cuda.is_available() else 'cpu'
-      model = nn().to(device)
+      model = network().to(device)
+      # 创建 Huber 与mse 损失函数，不进行聚合
+      huber = nn.SmoothL1Loss(reduction='none')
+      mse = nn.MSELoss(reduction='none')
 
       checkpoint_pth = ckpt_path
       state_dict = torch.load(checkpoint_pth, map_location=device)
@@ -754,12 +765,14 @@ def project(ckpt_path, p4, nn):
             # 计算loss
             XYZ_org = p42XYZ_ts(p4)  # 将要映射的四基色下的坐标转为XYZ坐标
             LAB_org = XYZ2LAB(XYZ_org)  # 将要映射的XYZ坐标转为LAB坐标
-            direct_pro_v = torch.clamp(p4, 0, 1)  # 求直接映射的坐标
-            XYZ_srgb = p52XYZ_ts(project_p5_t)  # 映射后五基色下的坐标转为XYZ坐标
-            LAB_srgb = XYZ2LAB(XYZ_srgb)  # 映射后XYZ坐标转为LAB坐标
-            delta_E = CIE2000(LAB_srgb, LAB_org)  # 求CIEDE2000
+            direct_pro_v = torch.clamp(four2five_ts(p4, XYZ4_ts, XYZ5_ts), 0, 1)  # 求直接映射的坐标
+            direct_pro_v_xyz = p52XYZ_ts(direct_pro_v)
+            direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
+            XYZ_p5 = p52XYZ_ts(project_p5_t)  # 映射后五基色下的坐标转为XYZ坐标
+            LAB_p5 = XYZ2LAB(XYZ_p5)  # 映射后XYZ坐标转为LAB坐标
+            delta_E = CIE2000(LAB_p5, LAB_org)  # 求CIEDE2000
             loss_de = huber(delta_E, torch.zeros_like(delta_E))
-            loss_m = mse(project_p5_t, direct_pro_v)
+            loss_m = mse(LAB_p5, direct_pro_v_lab).mean(dim=1)
             loss = alpha * loss_de + (1 - alpha) * loss_m  # loss由CIEDE2000与MSE加权求得
             loss = loss.cpu().numpy()
 
@@ -790,9 +803,13 @@ if __name__ == "__main__":
       train()
 
       # 推理
-      # proj_pts = GetPoints(100)
-      # proj_pts,_ = filter(proj_pts)
-      # ckpt_path = "models/Q1/20250518_180458.pth" #模型路径
-      # pjt = project(ckpt_path, proj_pts)
+      # proj_pts = GetPoints4(10000)
+      # proj_pts_pinv = four2five(proj_pts,XYZ4, XYZ5)
+      # proj_pts_flags,_ = flag(proj_pts,proj_pts_pinv)
+      # _,proj_pts = filter(proj_pts_flags)
+      # print(f'共有{proj_pts.shape[0]}个点越界')
+      # ckpt_path = "models/Q2/oss/oss20250523_211921.pth" #模型路径
+      # pjt,loss = project(ckpt_path, proj_pts,MLP_oss_only)   todo:计算95分位点
       # print("❤️ 映射结果:\n", pjt)
+      # print(loss)
 
