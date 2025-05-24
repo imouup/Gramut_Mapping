@@ -312,8 +312,8 @@ class MLP(nn.Module):
 # 训练主流程
 huber = nn.HuberLoss(delta=1.0)
 mse = torch.nn.MSELoss()
-alpha = 0.9
-beta_L = 0.05
+alpha = 0.95
+beta_L = 0.005
 beta_hue = 0.05
 
 def train_mlp(
@@ -355,7 +355,9 @@ def train_mlp(
 
       # 记录损失，用于绘图
       train_losses = []
+      train_deltaE = []
       val_losses = []
+      val_deltaE = []
       fig, ax = plt.subplots()
       plt.ion()
 
@@ -363,6 +365,7 @@ def train_mlp(
       for e in range(1, epochs+1):
             model.train()
             running_loss = 0.0
+            running_deltaE = 0.0
 
             for bt in train_loader:
                   bt = bt.to(device) # 移到gpu
@@ -393,7 +396,7 @@ def train_mlp(
                   delta_E = CIE2000(LAB_srgb,LAB_org)
                   loss_de = huber(delta_E,torch.zeros_like(delta_E))
                   loss_L = torch.mean((L_srgb - L_org) ** 2)
-                  # loss_m =mse(LAB_srgb,direct_pro_t_lab)  # mes只能反映欧氏距离，因此要在LAB下比较
+
                   delta_h = torch.remainder(h_srgb - h_org + torch.pi, 2 * torch.pi) - torch.pi
                   loss_hue = torch.mean(delta_h ** 2)
                   loss  = (
@@ -408,13 +411,18 @@ def train_mlp(
                   optimizer.step() # 更新参数
 
                   running_loss += loss.item() * bt.size(0) # 单个batch的loss总和
+                  running_deltaE += torch.mean(delta_E) * bt.size(0)
 
             train_e_loss = running_loss / len(train_dts)
+            train_e_deltaE = running_deltaE / len(train_dts)
             train_losses.append(train_e_loss)
+            train_deltaE.append(train_e_deltaE)
+
 
             ## 验证部分
             model.eval()
             val_running_loss = 0.0
+            val_running_deltaE = 0.0
             with torch.no_grad():
                   for bt in val_loader:
                         bt = bt.to(device)
@@ -438,7 +446,7 @@ def train_mlp(
 
                         delta_E = CIE2000(LAB_srgb, LAB_org)
                         loss_de_val = huber(delta_E, torch.zeros_like(delta_E))
-                        # loss_m_val = mse(LAB_srgb, direct_pro_v_lab)
+
                         loss_L = torch.mean((L_srgb - L_org) ** 2)
                         delta_h = torch.remainder(h_srgb - h_org + torch.pi, 2 * torch.pi) - torch.pi
                         loss_hue = torch.mean(delta_h ** 2)
@@ -448,12 +456,15 @@ def train_mlp(
                             beta_hue * loss_hue
                         )
                         val_running_loss += loss_val.item() * bt.size(0)
+                        val_running_deltaE += torch.mean(delta_E) * bt.size(0)
 
             val_e_loss = val_running_loss / len(val_dts)
+            val_e_deltaE = val_running_deltaE / len(val_dts)
             val_losses.append(val_e_loss)
+            val_deltaE.append(val_e_deltaE)
             scheduler.step(val_e_loss)
 
-            print(f'▶ Epoch [{e:02d}/{epochs:02d}]  Train ΔE₀₀: {train_e_loss:.4f}   Val ΔE₀₀: {val_e_loss:.4f}')
+            print(f'▶ Epoch [{e:02d}/{epochs:02d}]  Train ΔE₀₀: {train_e_deltaE:.4f}   Val ΔE₀₀: {val_e_deltaE:.4f}')
             # 绘图
             x_vals = list(range(1, len(train_losses) + 1))
             ax.clear()
@@ -499,18 +510,37 @@ def project(ckpt_path,bt):
             project_srgb = project_srgb_t.cpu().numpy() # 转为numpy数组
 
 
+
             # 计算loss
             XYZ_org = BT2XYZ_ts(bt)  # 将要映射的BT2020坐标转为XYZ坐标
             LAB_org = XYZ2LAB(XYZ_org)  # 将要映射的XYZ坐标转为LAB坐标
+
+            L_org = LAB_org[:, 0]  # 目标值的 L*
+            a_org, b_org = LAB_org[:, 1], LAB_org[:, 2]
+            h_org = torch.atan2(b_org, a_org)
+
+
             direct_pro_v = torch.clamp(sRGB_org, 0, 1) # 求直接映射的坐标
             direct_pro_v_xyz = sRGB2XYZ_ts(direct_pro_v)
             direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
             XYZ_srgb = sRGB2XYZ_ts(project_srgb_t) # 映射后sRGB坐标转为XYZ坐标
             LAB_srgb = XYZ2LAB(XYZ_srgb) # 映射后XYZ坐标转为LAB坐标
+
+            L_srgb = LAB_srgb[:, 0]  # 预测值的 L*
+            a_srgb, b_srgb = LAB_srgb[:, 1], LAB_srgb[:, 2]
+            h_srgb = torch.atan2(b_srgb, a_srgb)
+
             delta_E = CIE2000(LAB_srgb, LAB_org) # 求CIEDE2000
             loss_de = huber(delta_E, torch.zeros_like(delta_E))
-            loss_m = mse(LAB_srgb, direct_pro_v_lab).mean(dim=1)
-            loss = alpha * loss_de + (1 - alpha) * loss_m  # loss由CIEDE2000与MSE加权求得
+            # loss_m = mse(LAB_srgb, direct_pro_v_lab).mean(dim=1)
+            loss_L = torch.mean((L_srgb - L_org) ** 2)
+            delta_h = torch.remainder(h_srgb - h_org + torch.pi, 2 * torch.pi) - torch.pi
+            loss_hue = torch.mean(delta_h ** 2)
+            loss = (
+                    alpha * loss_de +
+                    beta_L * loss_L +
+                    beta_hue * loss_hue
+            )  # loss由CIEDE2000与MSE加权求得
             loss = loss.cpu().numpy()
 
       return project_srgb, loss, delta_E.cpu().numpy()
@@ -523,7 +553,7 @@ def train():
             n_samples=4096000,
             batch_size=10240,
             epochs=20,
-            lr=0.001,
+            lr=1e-3,
             device=device
       )
 
@@ -566,7 +596,7 @@ if __name__ == "__main__":
       # pts = GetPoints(1000)
       # proj_pts,_ = filter(pts)
       # # direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
-      # ckpt_path = "models/Q1/20250524_091356.pth" #模型路径
+      # ckpt_path = "models/Q1/20250524_204258.pth" #模型路径
       #
       # pjt,loss,delta_E = project(ckpt_path, proj_pts) # 送入MLP
       # # print("❤️ MLP映射结果:\n", pjt)
