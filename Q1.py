@@ -17,6 +17,28 @@ M1 = np.array([[  6.36958048e-01,   1.44616904e-01,   1.68880975e-01],
       [  4.99410657e-17,   2.80726930e-02,   1.06098506e+00]])
 GOAL = 'sRGB' # 目标色彩空间
 
+epsilon_np = 216.0 / 24389.0
+kappa_np = 24389.0 / 27.0
+
+def XYZ2LAB_numpy(xyz_points):
+      xr = xyz_points[:, 0] / ref_X
+      yr = xyz_points[:, 1] / ref_Y
+      zr = xyz_points[:, 2] / ref_Z
+
+      fx = np.where(xr > epsilon_np, np.power(xr, 1.0 / 3.0), (kappa_np * xr + 16.0) / 116.0)
+      fy = np.where(yr > epsilon_np, np.power(yr, 1.0 / 3.0), (kappa_np * yr + 16.0) / 116.0)
+      fz = np.where(zr > epsilon_np, np.power(zr, 1.0 / 3.0), (kappa_np * zr + 16.0) / 116.0)
+
+      L = (116.0 * fy) - 16.0
+      a = 500.0 * (fx - fy)
+      b = 200.0 * (fy - fz)
+
+      return np.stack([L, a, b], axis=-1)
+
+def BT2LAB(rgb_points_bt2020):
+    xyz_pts = BT2XYZ(rgb_points_bt2020)
+    lab_pts = XYZ2LAB_numpy(xyz_pts)
+    return lab_pts
 
 def BT2XYZ(rgb_2020):
       '''
@@ -46,6 +68,201 @@ def GetPoints(n_samples=1000,seed=233):
       np.random.seed(seed)
       points = np.random.rand(n_samples,3)
       return points
+
+
+def GetPoints_LAB_Stratified(n_samples=1000, seed=233, num_L_strata=5, num_a_strata=5, num_b_strata=5,
+                             candidate_multiplier=20):
+      """
+      在BT.2020 RGB空间中生成点，尝试使其在对应的LAB空间中实现分层采样。
+      这是对LAB空间均匀采样的一种近似。
+      """
+      np.random.seed(seed)
+
+      # 1. 生成大量候选BT.2020 RGB点
+      n_candidates = n_samples * candidate_multiplier
+      candidate_bt2020_rgb = np.random.rand(n_candidates, 3)
+
+      # 2. 将它们转换为LAB值
+      candidate_lab = BT2LAB(candidate_bt2020_rgb)
+
+      # 3. 定义LAB分层边界 (使用百分位数以适应BT.2020的LAB色域形状)
+      L_edges = np.percentile(candidate_lab[:, 0], np.linspace(0, 100, num_L_strata + 1))
+      a_edges = np.percentile(candidate_lab[:, 1], np.linspace(0, 100, num_a_strata + 1))
+      b_edges = np.percentile(candidate_lab[:, 2], np.linspace(0, 100, num_b_strata + 1))
+
+      # 确保边界唯一，防止因数据稀疏导致重复边界
+      L_edges = np.unique(L_edges)
+      a_edges = np.unique(a_edges)
+      b_edges = np.unique(b_edges)
+
+      # 根据实际唯一边界数调整分层数
+      actual_num_L_strata = max(1, len(L_edges) - 1)
+      actual_num_a_strata = max(1, len(a_edges) - 1)
+      actual_num_b_strata = max(1, len(b_edges) - 1)
+
+      # 4. 将候选点分配到各分层，并存储其原始索引
+      strata_map = {}  # {(l_idx, a_idx, b_idx): [original_candidate_indices]}
+
+      for i in range(n_candidates):
+            l_val, a_val, b_val = candidate_lab[i]
+
+            # np.digitize: 如果 x < edges[0], 返回 0. 如果 x >= edges[-1], 返回 len(edges).
+            # 我们需要索引范围从 0 到 num_strata-1.
+            l_idx = np.clip(np.digitize(l_val, L_edges[:-1]) - 1, 0,
+                            actual_num_L_strata - 1) if actual_num_L_strata > 0 else 0
+            a_idx = np.clip(np.digitize(a_val, a_edges[:-1]) - 1, 0,
+                            actual_num_a_strata - 1) if actual_num_a_strata > 0 else 0
+            b_idx = np.clip(np.digitize(b_val, b_edges[:-1]) - 1, 0,
+                            actual_num_b_strata - 1) if actual_num_b_strata > 0 else 0
+
+            stratum_key = (l_idx, a_idx, b_idx)
+            if stratum_key not in strata_map:
+                  strata_map[stratum_key] = []
+            strata_map[stratum_key].append(i)
+
+      # 5. 从每个分层中选择点
+      selected_indices = []
+      # 计算理论上每个分层应选取的点数（如果所有分层都有足够点）
+      # 更稳健的策略是循环选取，直到达到n_samples
+
+      num_total_strata = actual_num_L_strata * actual_num_a_strata * actual_num_b_strata
+      if num_total_strata == 0:  # 避免除零
+            print("警告: LAB分层数为0，将退回随机采样。")
+            return np.random.rand(n_samples, 3)
+
+      # 打乱分层处理顺序，避免偏差
+      active_strata_keys = list(strata_map.keys())
+      np.random.shuffle(active_strata_keys)
+
+      # 记录每个分层已选取的点数
+      stratum_pick_count = {key: 0 for key in active_strata_keys}
+
+      # 循环选取，直到达到n_samples或所有分层选完
+      while len(selected_indices) < n_samples:
+            points_added_in_this_cycle = 0
+            for key in active_strata_keys:
+                  if len(selected_indices) >= n_samples:
+                        break
+                  if stratum_pick_count[key] < len(strata_map[key]):  # 如果该分层还有点可选
+                        original_candidate_idx = strata_map[key][stratum_pick_count[key]]
+                        selected_indices.append(original_candidate_idx)
+                        stratum_pick_count[key] += 1
+                        points_added_in_this_cycle += 1
+            if points_added_in_this_cycle == 0:  # 如果一轮循环下来没有新点加入，说明所有分层已选尽
+                  break
+
+      # 6. 如果通过分层选取的点数不足 n_samples，从所有候选点中随机补充（确保不重复）
+      current_selected_count = len(selected_indices)
+      if current_selected_count < n_samples:
+            remaining_needed = n_samples - current_selected_count
+
+            all_candidate_indices = np.arange(n_candidates)
+            # 从尚未被选中的候选点中选取
+            pool_of_remaining_indices = np.setdiff1d(all_candidate_indices, np.array(selected_indices, dtype=int))
+
+            if len(pool_of_remaining_indices) >= remaining_needed:
+                  additional_indices = np.random.choice(pool_of_remaining_indices, remaining_needed, replace=False)
+            else:  # 可用点不足，只能全选了
+                  additional_indices = pool_of_remaining_indices
+                  print(f"警告: 补充点时，可用候选点 ({len(pool_of_remaining_indices)}) 少于需求 ({remaining_needed})。")
+
+            selected_indices.extend(additional_indices)
+
+      if not selected_indices:
+            print("警告: LAB分层采样未能选取任何点，将退回随机采样。")
+            return np.random.rand(n_samples, 3)
+
+      final_selected_indices = np.array(selected_indices, dtype=int)[:n_samples]  # 确保数量正确
+      return candidate_bt2020_rgb[final_selected_indices]
+
+
+def GetPoints_LAB_Sorted_GPU(n_samples: int,
+                             device: torch.device,
+                             candidate_multiplier: int = 30,  # 可以调整以平衡覆盖度和内存/计算开销
+                             seed: int = None):
+      """
+      在GPU上生成BT.2020 RGB点, 通过在LAB空间排序并选取来尝试改善覆盖度。
+      """
+      if seed is not None:
+            torch.manual_seed(seed)  # 为CPU和GPU设置种子 (如果CUDA可用)
+
+      n_total_candidates = n_samples * candidate_multiplier
+
+      # 1. 在GPU上生成候选BT.2020 RGB点
+      candidate_bt2020_rgb = torch.rand(n_total_candidates, 3, device=device)
+
+      # 2. 在GPU上转换为LAB值
+      #   确保 BT2XYZ_ts 和 XYZ2LAB 使用的矩阵和参考值已在device上
+      #   (M1_ts, ref_X, ref_Y, ref_Z, epsilon, kappa 应该在调用前配置好)
+      xyz_candidates = BT2XYZ_ts(candidate_bt2020_rgb)
+      lab_candidates = XYZ2LAB(xyz_candidates)
+
+      # 3. 根据LAB值排序候选点
+      #    torch.lexsort 按最后一个键首先排序 (b, then a, then L)
+      sorted_indices = torch.lexsort(keys=(lab_candidates[:, 2],  # b*
+                                           lab_candidates[:, 1],  # a*
+                                           lab_candidates[:, 0]))  # L*
+
+      # 4. 按固定步长选择索引，以获得 n_samples 个点
+      #    这种方法有助于从排序后的列表中均匀地抽取样本
+      if n_total_candidates == 0 or n_samples == 0:
+            return torch.empty((0, 3), device=device)  # 返回空张量
+
+      step = max(1, n_total_candidates // n_samples)
+
+      # 选择索引并确保不超过已排序索引的边界
+      selected_indices_from_sorted = sorted_indices[::step]
+
+      # 如果由于步长和总数的原因，选取的点略多或略少于n_samples，进行调整
+      if selected_indices_from_sorted.shape[0] > n_samples:
+            selected_indices_final = selected_indices_from_sorted[:n_samples]
+      elif selected_indices_from_sorted.shape[0] < n_samples:
+            # 如果选取的点太少，可能需要更复杂的策略或接受较少的点
+            # 一个简单的处理是，如果点数不足，则从已排序的点中随机选取补足（或就用现有的）
+            # 这里我们先用已选取的，如果数量严重不足，可能需要增大candidate_multiplier
+            print(f"警告: LAB排序后选取的点数 ({selected_indices_from_sorted.shape[0]}) 少于目标 ({n_samples}). "
+                  f"考虑增大 candidate_multiplier。")
+            selected_indices_final = selected_indices_from_sorted
+            if selected_indices_final.shape[0] == 0 and n_samples > 0:  # 极端情况，没选到点
+                  # 回退到随机选择一部分候选点
+                  if n_total_candidates >= n_samples:
+                        selected_indices_final = torch.randperm(n_total_candidates, device=device)[:n_samples]
+                  else:  # 候选点本身就少于目标
+                        selected_indices_final = torch.arange(n_total_candidates, device=device)
+
+
+      else:  # 正好是n_samples
+            selected_indices_final = selected_indices_from_sorted
+
+      if selected_indices_final.shape[0] == 0 and n_samples > 0:  # 如果最终还是0个点
+            print("警告: 最终未能选取任何点。返回随机生成的点。")
+            return torch.rand(n_samples, 3, device=device)
+
+      selected_bt2020_rgb = candidate_bt2020_rgb[selected_indices_final]
+
+      return selected_bt2020_rgb
+
+
+def filter_gpu(bt2020_points_ts: torch.Tensor):
+      """
+      在GPU上剔除在目标sRGB色域内的点。
+      bt2020_points_ts: BT.2020 RGB张量 (在GPU上)。
+      假设 M1_ts 和 M2_ts (XYZ->sRGB转换矩阵) 已在相应device上定义和加载。
+      """
+      if bt2020_points_ts.shape[0] == 0:
+            return bt2020_points_ts, torch.empty_like(bt2020_points_ts)
+
+      # BT.2020 RGB -> XYZ (使用全局的 M1_ts)
+      xyz_ts = BT2XYZ_ts(bt2020_points_ts)
+
+      # XYZ -> sRGB (使用全局的 M2_ts - 你代码中名为 XYZ2sRGB)
+      srgb_goal_ts = XYZ2sRGB(xyz_ts)
+
+      # 创建掩码，屏蔽在目标色域内的点 (0到1之间)
+      mask_oos_ts = torch.any((srgb_goal_ts < 0.0) | (srgb_goal_ts > 1.0), dim=1)
+
+      return bt2020_points_ts[mask_oos_ts], srgb_goal_ts[mask_oos_ts]
+
 
 def filter(points):
       '''
@@ -327,9 +544,30 @@ def train_mlp(
       # 生成数据集
       print(f'▶ 正在从BT.2020色彩空间中选取 {n_samples} 个点，\n并筛选出超出目标色域的点')
 
-      points_org = GetPoints(n_samples=n_samples,seed=233)
-      points_oos = filter(points_org)[0]
+
+      # v1取点方法，在BT2020方块内取点
+      # points_org = GetPoints(n_samples=n_samples,seed=233)
+
+      # v2 取点方法：使用新的LAB分层采样方法
+      # 你可能需要根据 n_samples 的大小调整分层数量
+      # 例如，如果 n_samples 较大，可以增加分层数
+      num_L_strata = 5  # 示例值，L*方向的分层数
+      num_a_strata = 5  # 示例值，a*方向的分层数
+      num_b_strata = 5  # 示例值，b*方向的分层数
+      candidate_multiplier_gpu = 30  # 为分层采样准备的候选点乘数，可能需要根据分层数调整
+
+      points_org_gpu = GetPoints_LAB_Sorted_GPU(
+            n_samples=n_samples * 5,  # 多生成一些，因为filter_gpu会剔除一部分
+            # 这里的 n_samples * 5 是一个启发式的值，你可能需要调整
+            device=device,  # 传递 torch.device 对象
+            candidate_multiplier=candidate_multiplier_gpu,
+            seed=233  # 或者其他种子
+      )
+
+      points_oos, _ = filter_gpu(points_org_gpu)
+      points_oos = points_oos.cpu().numpy()
       print(f'  共采集到了{points_oos.shape[0]}个点')
+
 
       # 加载训练集
       perm = np.random.permutation(points_oos.shape[0])
@@ -550,7 +788,7 @@ def train():
       print(f'▶ 训练开始')
 
       model = train_mlp(
-            n_samples=4096000,
+            n_samples=409600,
             batch_size=10240,
             epochs=20,
             lr=1e-3,
