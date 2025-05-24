@@ -40,7 +40,7 @@ def four2five(cordinate, XYZ4, XYZ5):
     :param cordinate: (n,4) 的矩阵，每一行为一个四基色下的坐标
     :param XYZ4: 四基色转换矩阵 (3,4)
     :param XYZ5: 五基色转换矩阵 (3,5)
-    :return: P_flags 标记后的五基色坐标
+    :return: P_5.T   # (n,5)的利用最小二乘法映射后的无五基色下的坐标
     '''
     # 先将输入的四基色颜色在XYZ下表示
     cordinate = cordinate.T
@@ -51,7 +51,7 @@ def four2five(cordinate, XYZ4, XYZ5):
     mat5 = XYZ5.T
     mat5_inv = np.linalg.pinv(mat5)
     P_5 = mat5_inv @ xyz
-    return P_5.T   # (n,5) 最后一列为flag: 0表示未越界，1表示越界
+    return P_5.T   # (n,5)
 
 def flag(points4, points5):
     '''
@@ -736,7 +736,7 @@ def train():
             torch.save(model.state_dict(), file_name)
 
 
-def project(ckpt_path, p4, network):
+def project_mlp(ckpt_path, p4, network):
       '''
       此函数用于加载模型并推理
 
@@ -757,12 +757,15 @@ def project(ckpt_path, p4, network):
       p4 = torch.from_numpy(p4).float()
       p4 = p4.to(device)
 
+
       model.eval()
       with torch.no_grad():
             project_p5_t = model(p4)
             project_p5 = project_p5_t.cpu().numpy()  # 转为numpy数组
 
             # 计算loss
+            if p4.shape[1] == 5:
+                  p4 = p4[:,0:-1]
             XYZ_org = p42XYZ_ts(p4)  # 将要映射的四基色下的坐标转为XYZ坐标
             LAB_org = XYZ2LAB(XYZ_org)  # 将要映射的XYZ坐标转为LAB坐标
             direct_pro_v = torch.clamp(four2five_ts(p4, XYZ4_ts, XYZ5_ts), 0, 1)  # 求直接映射的坐标
@@ -778,6 +781,73 @@ def project(ckpt_path, p4, network):
 
       return project_p5, loss
 
+def project(p_num=1000):
+
+      proj_pts = GetPoints4(p_num)  # 先取点
+      ## 有标记 -----------<begin>-----------
+      print("🚩 方法1：带标记的纯MLP映射方法")
+      ### 标记，划分越界与非越界点
+      proj_pts_pinv = four2five(proj_pts, XYZ4, XYZ5)  # 最小二乘法
+      proj_pts_flags4, proj_pts_flags5 = flag(proj_pts, proj_pts_pinv)  # 标记
+
+      flag0_pts, flag1_pts = filter(proj_pts_flags4)  # 需要传入mlp的四基色点
+      print(f'共有{flag1_pts.shape[0]}个点越界，')
+      ckpt_path = "models/Q2/all/20250524_160416.pth"  # 模型路径
+      ### 映射
+      pjt_mlp_flags, loss_mlp = project_mlp(ckpt_path, proj_pts_flags4, MLP_withflags)  # 越界点的五基色坐标
+      ### 求moss
+      #### 只有MLP的loss
+      print('🍰以下是MLP的loss，也是整体的loss')
+      loss_mlp_95 = np.percentile(loss_mlp, 95, 0)
+      loss_mlp_99 = np.percentile(loss_mlp, 99, 0)
+      loss_mlp_mean = np.mean(loss_mlp, axis=0)
+      # print("❤️ 映射结果:\n", pjt_mlp)
+      print(f'整体的loss值的95分位数为: {loss_mlp_95}')
+      print(f'整体的loss值的99分位数为: {loss_mlp_99}')
+      print(f'整体的平均loss为: {loss_mlp_mean}')
+      ## 有标记 -----------<end>-----------
+
+      ## 无标记 -----------<begin>-----------
+      print("🚩 方法2：最小二乘法+MLP映射方法")
+      ### 标记，划分越界与非越界点
+      proj_pts_pinv = four2five(proj_pts, XYZ4, XYZ5)  # 最小二乘法
+      proj_pts_flags4, proj_pts_flags5 = flag(proj_pts, proj_pts_pinv)  # 标记
+
+      _, mlp_pts = filter(proj_pts_flags4)  # 需要传入mlp的四基色点
+      print(f'共有{mlp_pts.shape[0]}个点越界')
+      ckpt_path = "models/Q2/oss/20250524_162828.pth"  # 模型路径
+      ### 映射
+      direct_pts, _ = filter(proj_pts_flags5)  # 没有越界的点的五基色下的坐标
+      pjt_mlp, loss_mlp = project_mlp(ckpt_path, proj_pts, MLP_oss_only)  # 越界点的五基色坐标
+      ### 求moss
+      #### 求最小二乘法的loss
+      xyz_direct_pts = p52XYZ(direct_pts)  # 转为XYZ
+      lab_direct_pts = colour.XYZ_to_Lab(xyz_direct_pts)  # 转为LAB
+      direct_origin, _ = filter(proj_pts_flags4)  # 映射前的坐标
+      xyz_direct_origin = p42XYZ(direct_origin)  # 映射前的坐标
+      lab_direct_origin = colour.XYZ_to_Lab(xyz_direct_origin)  # 映射前的坐标
+      deltaE_direct = colour.difference.delta_E_CIE2000(lab_direct_pts, lab_direct_origin)
+      loss_direct = alpha * deltaE_direct  # 直接映射过程中MSE = 0，因为此处的MSE是直接映射与使用MLP映射直接的MSE
+
+      #### 仅关注MLP的loss
+      print('🍰1.以下是MLP的loss')
+      loss_mlp_95 = np.percentile(loss_mlp, 95, 0)
+      loss_mlp_mean = np.mean(loss_mlp, axis=0)
+      # print("❤️ 映射结果:\n", pjt_mlp)
+      print(f'MLP的loss值的95分位数为: {loss_mlp_95}')
+      print(f'MLP的平均loss为: {loss_mlp_mean}{',可认为是0' if loss_mlp_mean < 1e-6 else ''}')
+
+      print('🍰2.以下是映射后没有越界的点的loss（这些点直接使用最小二乘法）')
+      print(f'未越界点的平均loss为: {np.mean(loss_direct, axis=0)}')
+
+      print('🍰3.以下是加上没有越界的点的整体loss')
+      loss_all = np.concatenate([loss_direct, loss_mlp])
+      loss_all_mean = np.mean(loss_all, axis=0)
+      loss_all_95 = np.percentile(loss_all, 95, 0)
+      print(f'总体的loss值的95分位数为: {loss_all_95}')
+      print(f'总体的平均loss为: {loss_all_mean}')
+
+      ## 无标记 -----------<end>-----------
 
 
 # main
@@ -800,16 +870,10 @@ if __name__ == "__main__":
       XYZ5_ts = torch.tensor(XYZ5,dtype=torch.float32).to(device)
 
       # 训练
-      train()
+      # train()
 
       # 推理
-      # proj_pts = GetPoints4(10000)
-      # proj_pts_pinv = four2five(proj_pts,XYZ4, XYZ5)
-      # proj_pts_flags,_ = flag(proj_pts,proj_pts_pinv)
-      # _,proj_pts = filter(proj_pts_flags)
-      # print(f'共有{proj_pts.shape[0]}个点越界')
-      # ckpt_path = "models/Q2/oss/oss20250523_211921.pth" #模型路径
-      # pjt,loss = project(ckpt_path, proj_pts,MLP_oss_only)   todo:计算95分位点
-      # print("❤️ 映射结果:\n", pjt)
-      # print(lossq
+      project(p_num=1000)
+
+
 

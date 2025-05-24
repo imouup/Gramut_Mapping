@@ -536,16 +536,17 @@ if __name__ == "__main__":
       # train()
 
       # 推理
-      proj_pts = GetPoints(1000)
-      proj_pts,_ = filter(proj_pts)
+      pts = GetPoints(1000)
+      proj_pts,_ = filter(pts)
+      direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
       ckpt_path = "models/Q1/20250524_091356.pth" #模型路径
-      pjt,loss = project(ckpt_path, proj_pts)
-      print("❤️ 映射结果:\n", pjt)
+
+      pjt,loss = project(ckpt_path, proj_pts) # 送入MLP
+      # print("❤️ MLP映射结果:\n", pjt)
       loss_95 = np.percentile(loss, 95, 0)
       loss_mean = np.mean(loss, axis=0)
-      print("❤️ 映射结果:\n", pjt)
-      print(f'loss值的95分位数为: {loss_95}')
-      print(f'平均loss为: {loss_mean}')
+      print(f'MLP的loss值的95分位数为: {loss_95}')
+      print(f'MLP平均loss为: {loss_mean}')
 
 
 # ----------------------
