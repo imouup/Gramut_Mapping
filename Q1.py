@@ -467,20 +467,22 @@ def project(ckpt_path,bt):
       model.eval()
       with torch.no_grad():
             project_srgb_t = model(bt)
+            XYZ_org = BT2XYZ_ts(bt)
+            sRGB_org = XYZ2sRGB(XYZ_org)
             project_srgb = project_srgb_t.cpu().numpy() # 转为numpy数组
 
 
             # 计算loss
             XYZ_org = BT2XYZ_ts(bt)  # 将要映射的BT2020坐标转为XYZ坐标
             LAB_org = XYZ2LAB(XYZ_org)  # 将要映射的XYZ坐标转为LAB坐标
-            direct_pro_v = torch.clamp(bt, 0, 1) # 求直接映射的坐标
+            direct_pro_v = torch.clamp(sRGB_org, 0, 1) # 求直接映射的坐标
             direct_pro_v_xyz = sRGB2XYZ_ts(direct_pro_v)
             direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
             XYZ_srgb = sRGB2XYZ_ts(project_srgb_t) # 映射后sRGB坐标转为XYZ坐标
             LAB_srgb = XYZ2LAB(XYZ_srgb) # 映射后XYZ坐标转为LAB坐标
             delta_E = CIE2000(LAB_srgb, LAB_org) # 求CIEDE2000
             loss_de = huber(delta_E, torch.zeros_like(delta_E))
-            loss_m = mse(project_srgb_t, direct_pro_v_lab).mean(dim=1)
+            loss_m = mse(LAB_srgb, direct_pro_v_lab).mean(dim=1)
             loss = alpha * loss_de + (1 - alpha) * loss_m  # loss由CIEDE2000与MSE加权求得
             loss = loss.cpu().numpy()
 
@@ -531,14 +533,19 @@ if __name__ == "__main__":
       srgb_to_xyz_mat = srgb_to_xyz_mat.to(device)
 
       # 训练
-      train()
+      # train()
 
       # 推理
-      # proj_pts = GetPoints(100)
-      # proj_pts,_ = filter(proj_pts)
-      # ckpt_path = "models/Q1/20250518_180458.pth" #模型路径
-      # pjt,loss = project(ckpt_path, proj_pts)
-      # print("❤️ 映射结果:\n", pjt)
+      proj_pts = GetPoints(1000)
+      proj_pts,_ = filter(proj_pts)
+      ckpt_path = "models/Q1/20250524_091356.pth" #模型路径
+      pjt,loss = project(ckpt_path, proj_pts)
+      print("❤️ 映射结果:\n", pjt)
+      loss_95 = np.percentile(loss, 95, 0)
+      loss_mean = np.mean(loss, axis=0)
+      print("❤️ 映射结果:\n", pjt)
+      print(f'loss值的95分位数为: {loss_95}')
+      print(f'平均loss为: {loss_mean}')
 
 
 # ----------------------
