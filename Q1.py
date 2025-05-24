@@ -312,7 +312,9 @@ class MLP(nn.Module):
 # 训练主流程
 huber = nn.HuberLoss(delta=1.0)
 mse = torch.nn.MSELoss()
-alpha = 0.8
+alpha = 0.9
+beta_L = 0.05
+beta_hue = 0.05
 
 def train_mlp(
     n_samples: int = 4096,
@@ -370,10 +372,12 @@ def train_mlp(
                   sRGB_org = XYZ2sRGB(XYZ_org)
                   LAB_org = XYZ2LAB(XYZ_org)
                   # 求出若直接投影到边界的sRGB坐标
-                  direct_pro_t = torch.clamp(sRGB_org,0,1)
-                  direct_pro_t_xyz = sRGB2XYZ_ts(direct_pro_t)
-                  direct_pro_t_lab = XYZ2LAB(direct_pro_t_xyz)
-
+                  # direct_pro_t = torch.clamp(sRGB_org,0,1)
+                  # direct_pro_t_xyz = sRGB2XYZ_ts(direct_pro_t)
+                  # direct_pro_t_lab = XYZ2LAB(direct_pro_t_xyz)
+                  L_org = LAB_org[:, 0]  # 目标值的 L*
+                  a_org, b_org = LAB_org[:, 1], LAB_org[:, 2]
+                  h_org = torch.atan2(b_org, a_org)
 
                   # 正向传播,得到(batch_size,3)的包含映射后的sRGB坐标的矩阵
                   srgb_lin = model(bt)
@@ -381,12 +385,22 @@ def train_mlp(
                   # 转换srgb_lin为LAB
                   XYZ_srgb = sRGB2XYZ_ts(srgb_lin)
                   LAB_srgb = XYZ2LAB(XYZ_srgb)
+                  L_srgb = LAB_srgb[:, 0]  # 预测值的 L*
+                  a_srgb, b_srgb = LAB_srgb[:, 1], LAB_srgb[:, 2]
+                  h_srgb = torch.atan2(b_srgb, a_srgb)
 
                   # 计算 CIEDE2000 delta E
                   delta_E = CIE2000(LAB_srgb,LAB_org)
                   loss_de = huber(delta_E,torch.zeros_like(delta_E))
-                  loss_m =mse(LAB_srgb,direct_pro_t_lab)  # mes只能反映欧氏距离，因此要在LAB下比较
-                  loss = torch.mean(alpha * loss_de + (1 - alpha) * loss_m)
+                  loss_L = torch.mean((L_srgb - L_org) ** 2)
+                  # loss_m =mse(LAB_srgb,direct_pro_t_lab)  # mes只能反映欧氏距离，因此要在LAB下比较
+                  delta_h = torch.remainder(h_srgb - h_org + torch.pi, 2 * torch.pi) - torch.pi
+                  loss_hue = torch.mean(delta_h ** 2)
+                  loss  = (
+                            alpha * loss_de +
+                            beta_L * loss_L +
+                            beta_hue * loss_hue
+                        )
 
                   # 反向传播
                   optimizer.zero_grad() # 清除已有梯度
@@ -408,18 +422,31 @@ def train_mlp(
                         sRGB_org = XYZ2sRGB(XYZ_org)
                         LAB_org = XYZ2LAB(XYZ_org)
 
-                        direct_pro_v = torch.clamp(sRGB_org, 0, 1)
-                        direct_pro_v_xyz = sRGB2XYZ_ts(direct_pro_v)
-                        direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
+                        # direct_pro_v = torch.clamp(sRGB_org, 0, 1)
+                        # direct_pro_v_xyz = sRGB2XYZ_ts(direct_pro_v)
+                        # direct_pro_v_lab = XYZ2LAB(direct_pro_v_xyz)
+                        L_org = LAB_org[:, 0]  # 目标值的 L*
+                        a_org, b_org = LAB_org[:, 1], LAB_org[:, 2]
+                        h_org = torch.atan2(b_org, a_org)
 
                         srgb_lin = model(bt)
                         XYZ_srgb = sRGB2XYZ_ts(srgb_lin)
                         LAB_srgb = XYZ2LAB(XYZ_srgb)
+                        L_srgb = LAB_srgb[:, 0]  # 预测值的 L*
+                        a_srgb, b_srgb = LAB_srgb[:, 1], LAB_srgb[:, 2]
+                        h_srgb = torch.atan2(b_srgb, a_srgb)
 
                         delta_E = CIE2000(LAB_srgb, LAB_org)
                         loss_de_val = huber(delta_E, torch.zeros_like(delta_E))
-                        loss_m_val = mse(LAB_srgb, direct_pro_v_lab)
-                        loss_val = torch.mean(alpha * loss_de_val + (1 - alpha) * loss_m_val)
+                        # loss_m_val = mse(LAB_srgb, direct_pro_v_lab)
+                        loss_L = torch.mean((L_srgb - L_org) ** 2)
+                        delta_h = torch.remainder(h_srgb - h_org + torch.pi, 2 * torch.pi) - torch.pi
+                        loss_hue = torch.mean(delta_h ** 2)
+                        loss_val = (
+                            alpha * loss_de_val +
+                            beta_L * loss_L +
+                            beta_hue * loss_hue
+                        )
                         val_running_loss += loss_val.item() * bt.size(0)
 
             val_e_loss = val_running_loss / len(val_dts)
@@ -533,22 +560,22 @@ if __name__ == "__main__":
       srgb_to_xyz_mat = srgb_to_xyz_mat.to(device)
 
       # 训练
-      # train()
+      train()
 
       # 推理
-      pts = GetPoints(1000)
-      proj_pts,_ = filter(pts)
-      # direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
-      ckpt_path = "models/Q1/20250524_091356.pth" #模型路径
-
-      pjt,loss,delta_E = project(ckpt_path, proj_pts) # 送入MLP
-      # print("❤️ MLP映射结果:\n", pjt)
-      loss_95 = np.percentile(loss, 95, 0)
-      loss_mean = np.mean(loss, axis=0)
-      delta_E_mean = np.mean(delta_E,axis=0)
-      print(f'MLP的loss值的95分位数为: {loss_95}')
-      print(f'MLP平均loss为: {loss_mean}')
-      print(f'MLP平均delta_E为: {delta_E_mean}')
+      # pts = GetPoints(1000)
+      # proj_pts,_ = filter(pts)
+      # # direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
+      # ckpt_path = "models/Q1/20250524_091356.pth" #模型路径
+      #
+      # pjt,loss,delta_E = project(ckpt_path, proj_pts) # 送入MLP
+      # # print("❤️ MLP映射结果:\n", pjt)
+      # loss_95 = np.percentile(loss, 95, 0)
+      # loss_mean = np.mean(loss, axis=0)
+      # delta_E_mean = np.mean(delta_E,axis=0)
+      # print(f'MLP的loss值的95分位数为: {loss_95}')
+      # print(f'MLP平均loss为: {loss_mean}')
+      # print(f'MLP平均delta_E为: {delta_E_mean}')
 
 
 # ----------------------
