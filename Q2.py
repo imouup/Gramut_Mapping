@@ -811,5 +811,5 @@ if __name__ == "__main__":
       # ckpt_path = "models/Q2/oss/oss20250523_211921.pth" #模型路径
       # pjt,loss = project(ckpt_path, proj_pts,MLP_oss_only)   todo:计算95分位点
       # print("❤️ 映射结果:\n", pjt)
-      # print(loss)
+      # print(lossq
 
