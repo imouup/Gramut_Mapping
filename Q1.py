@@ -11,6 +11,11 @@ from torch.utils.data import Dataset, DataLoader
 from colour import XYZ_to_RGB
 from colour.models import oetf_inverse_BT2020, RGB_COLOURSPACE_sRGB, RGB_Colourspace, RGB_COLOURSPACES, XYZ_to_Lab, RGB_to_XYZ
 matplotlib.use('Qt5Agg')
+import os
+
+# 创建 models/Q1 目录
+os.makedirs('models/Q1', exist_ok=True)
+
 
 M1 = np.array([[  6.36958048e-01,   1.44616904e-01,   1.68880975e-01],
       [  2.62700212e-01,   6.77998072e-01,   5.93017165e-02],
