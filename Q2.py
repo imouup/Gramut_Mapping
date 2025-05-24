@@ -127,8 +127,8 @@ def XYZ2LAB(xyz: torch.Tensor) -> torch.Tensor:
       yr = xyz[:,1] / ref_Y
       zr = xyz[:,2] / ref_Z
 
-      epsilon = 216.0 / 24359.0
-      kappa = 243890. / 27.0
+      epsilon = 216.0 / 24389.0
+      kappa = 24389.0 / 27.0
 
       fx = torch.where(
             xr > epsilon, xr.pow(1.0 / 3.0),

@@ -112,8 +112,8 @@ def XYZ2LAB(xyz: torch.Tensor) -> torch.Tensor:
       yr = xyz[:,1] / ref_Y
       zr = xyz[:,2] / ref_Z
 
-      epsilon = 216.0 / 24359.0
-      kappa = 243890. / 27.0
+      epsilon = 216.0 / 24389.0
+      kappa = 24389.0 / 27.0
 
       fx = torch.where(
             xr > epsilon, xr.pow(1.0 / 3.0),
@@ -312,7 +312,7 @@ class MLP(nn.Module):
 # 训练主流程
 huber = nn.HuberLoss(delta=1.0)
 mse = torch.nn.MSELoss()
-alpha = 0.95
+alpha = 1.0
 beta_L = 0.005
 beta_hue = 0.05
 
