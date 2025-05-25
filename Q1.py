@@ -558,9 +558,9 @@ def train_mlp(
       num_b_strata = 5  # 示例值，b*方向的分层数
       candidate_multiplier_gpu = 30  # 为分层采样准备的候选点乘数，可能需要根据分层数调整
 
-      points_org_gpu = GetPoints2020_lab(n_samples)
+      points_org = GetPoints(n_samples)
 
-      points_oos, _ = filter(points_org_gpu)
+      points_oos, _ = filter(points_org)
       print(f'  共采集到了{points_oos.shape[0]}个点')
 
 
@@ -826,19 +826,19 @@ if __name__ == "__main__":
       train()
 
       # 推理
-      # pts = GetPoints(1000)
-      # proj_pts,_ = filter(pts)
-      # # direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
-      # ckpt_path = "models/Q1/20250524_204258.pth" #模型路径
-      #
-      # pjt,loss,delta_E = project(ckpt_path, proj_pts) # 送入MLP
-      # # print("❤️ MLP映射结果:\n", pjt)
-      # loss_95 = np.percentile(loss, 95, 0)
-      # loss_mean = np.mean(loss, axis=0)
-      # delta_E_mean = np.mean(delta_E,axis=0)
-      # print(f'MLP的loss值的95分位数为: {loss_95}')
-      # print(f'MLP平均loss为: {loss_mean}')
-      # print(f'MLP平均delta_E为: {delta_E_mean}')
+      pts = GetPoints(1000)
+      proj_pts,_ = filter(pts)
+      # direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
+      ckpt_path = "models/Q1/20250524_204258.pth" #模型路径
+
+      pjt,loss,delta_E = project(ckpt_path, proj_pts) # 送入MLP
+      # print("❤️ MLP映射结果:\n", pjt)
+      loss_95 = np.percentile(loss, 95, 0)
+      loss_mean = np.mean(loss, axis=0)
+      delta_E_mean = np.mean(delta_E,axis=0)
+      print(f'MLP的loss值的95分位数为: {loss_95}')
+      print(f'MLP平均loss为: {loss_mean}')
+      print(f'MLP平均delta_E为: {delta_E_mean}')
 
 
 # ----------------------
