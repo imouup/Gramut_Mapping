@@ -11,6 +11,8 @@ from torch.utils.data import Dataset, DataLoader
 from colour import XYZ_to_RGB
 from colour.models import oetf_inverse_BT2020, RGB_COLOURSPACE_sRGB, RGB_Colourspace, RGB_COLOURSPACES, XYZ_to_Lab, RGB_to_XYZ
 matplotlib.use('Qt5Agg')
+from toolkits import GetPoints2020_lab
+
 
 M1 = np.array([[  6.36958048e-01,   1.44616904e-01,   1.68880975e-01],
       [  2.62700212e-01,   6.77998072e-01,   5.93017165e-02],
@@ -529,8 +531,8 @@ class MLP(nn.Module):
 # 训练主流程
 huber = nn.HuberLoss(delta=1.0)
 mse = torch.nn.MSELoss()
-alpha = 1.0
-beta_L = 0.005
+alpha = 0.9
+beta_L = 0.05
 beta_hue = 0.05
 
 def train_mlp(
@@ -556,16 +558,9 @@ def train_mlp(
       num_b_strata = 5  # 示例值，b*方向的分层数
       candidate_multiplier_gpu = 30  # 为分层采样准备的候选点乘数，可能需要根据分层数调整
 
-      points_org_gpu = GetPoints_LAB_Sorted_GPU(
-            n_samples=n_samples * 5,  # 多生成一些，因为filter_gpu会剔除一部分
-            # 这里的 n_samples * 5 是一个启发式的值，你可能需要调整
-            device=device,  # 传递 torch.device 对象
-            candidate_multiplier=candidate_multiplier_gpu,
-            seed=233  # 或者其他种子
-      )
+      points_org_gpu = GetPoints2020_lab(n_samples)
 
-      points_oos, _ = filter_gpu(points_org_gpu)
-      points_oos = points_oos.cpu().numpy()
+      points_oos, _ = filter(points_org_gpu)
       print(f'  共采集到了{points_oos.shape[0]}个点')
 
 
@@ -702,7 +697,7 @@ def train_mlp(
             val_deltaE.append(val_e_deltaE)
             scheduler.step(val_e_loss)
 
-            print(f'▶ Epoch [{e:02d}/{epochs:02d}]  Train ΔE₀₀: {train_e_deltaE:.4f}   Val ΔE₀₀: {val_e_deltaE:.4f}')
+            print(f'▶ Epoch [{e:02d}/{epochs:02d}]  Train ΔE₀₀: {train_e_deltaE:.4f}   Train Loss: {train_e_loss:.4f}   Val ΔE₀₀: {val_e_deltaE:.4f}   Val Loss: {val_e_loss:.4f}')
             # 绘图
             x_vals = list(range(1, len(train_losses) + 1))
             ax.clear()
@@ -788,7 +783,7 @@ def train():
       print(f'▶ 训练开始')
 
       model = train_mlp(
-            n_samples=409600,
+            n_samples=4096000,
             batch_size=10240,
             epochs=20,
             lr=1e-3,
