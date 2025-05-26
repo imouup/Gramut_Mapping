@@ -58,29 +58,75 @@ def plot_xyz_color_vectors(vectors, wavelength):
 
     plt.show()
 
-def plot_gamut_on_chromaticity_diagram(vectors, wavelength):
+def plot_gamut_on_chromaticity_diagram(
+    vectors1: np.ndarray,
+    wavelength1: np.ndarray,
+    vectors2: np.ndarray,
+    wavelength2: np.ndarray,
+    label1: str = "Gamut 1",
+    label2: str = "Gamut 2",
+    edge_colors: list = None
+):
     """
-    绘制 xy 色度图（马蹄图），并在其上标出给定颜色围成的区域。
+    绘制 xy 色度图（马蹄图），并在其上标出两个给定颜色空间围成的区域。
+
+    参数:
+        vectors1 (np.ndarray): 第一个颜色空间的 XYZ 向量数组, shape (n, 3).
+        wavelength1 (np.ndarray): 对应第一个向量组的波长（单位：nm）。
+        vectors2 (np.ndarray): 第二个颜色空间的 XYZ 向量数组, shape (m, 3).
+        wavelength2 (np.ndarray): 对应第二个向量组的波长（单位：nm）。
+        label1 (str): 第一个色域的标签。
+        label2 (str): 第二个色域的标签。
+        edge_colors (list of str, 可选): 包含两个颜色字符串的列表，用于两个色域的边缘。
+                                       默认为 ['blue', 'red']。
     """
-    # 将 XYZ 向量转换为 xy 坐标
-    xy = colour.XYZ_to_xy(vectors)
+    if edge_colors is None:
+        edge_colors = ['blue', 'red']
+    elif len(edge_colors) < 2:
+        # Fallback if not enough colors provided, ensuring two colors are available
+        edge_colors = ['blue', 'red'] + edge_colors
+        edge_colors = edge_colors[:2]
+
 
     # 获取色度图背景
-    figure, axes = colour.plotting.plot_chromaticity_diagram_CIE1931(standalone=False)
+    figure, axes = colour.plotting.plot_chromaticity_diagram_CIE1931(standalone=False) #
 
-    # 绘制多边形区域
-    polygon = plt.Polygon(xy, closed=True, fill=True, edgecolor='black', facecolor='none', linewidth=1.5)
-    axes.add_patch(polygon)
+    gamut_data_list = [
+        {'vectors': vectors1, 'wavelength': wavelength1, 'label': label1, 'edgecolor': edge_colors[0]},
+        {'vectors': vectors2, 'wavelength': wavelength2, 'label': label2, 'edgecolor': edge_colors[1]}
+    ]
 
-    # 标记每个波长点
-    rgb_colors = np.clip(colour.XYZ_to_sRGB(vectors), 0, 1)
-    for i in range(len(xy)):
-        axes.plot(xy[i, 0], xy[i, 1], 'o', color=rgb_colors[i], markersize=8)
-        axes.text(xy[i, 0], xy[i, 1] + 0.01, f'{int(wavelength[i])}nm', fontsize=9, ha='center')
+    for gamut_data in gamut_data_list:
+        vectors = gamut_data['vectors']
+        wavelength = gamut_data['wavelength']
+        label = gamut_data['label']
+        current_edge_color = gamut_data['edgecolor']
 
-    plt.title("CIE 1931 Chromaticity Diagram with Custom Gamut")
-    plt.grid(True)
-    plt.show()
+        # 将 XYZ 向量转换为 xy 坐标
+        xy = colour.XYZ_to_xy(vectors) #
+
+        # 绘制多边形区域 (fill=False so facecolor is not used, edgecolor defines the gamut boundary)
+        polygon = plt.Polygon(xy, closed=True, fill=False, edgecolor=current_edge_color, linewidth=1.5, label=label) #
+        axes.add_patch(polygon) #
+
+        # 标记每个波长点
+        # The color of the points themselves should be their actual sRGB color.
+        rgb_colors_points = np.clip(colour.XYZ_to_sRGB(vectors), 0, 1) #
+
+        for i in range(len(xy)): #
+            # Plot points with their actual color, and an edge matching the polygon for association
+            axes.plot(xy[i, 0], xy[i, 1], 'o',
+                      color=tuple(rgb_colors_points[i]),
+                      markeredgecolor=current_edge_color, # Use polygon edge color for marker edge
+                      markersize=8) #
+            # Add text label for wavelength, colored like the polygon edge for association
+            axes.text(xy[i, 0], xy[i, 1] + 0.01, f'{int(wavelength[i])}nm',
+                      fontsize=9, ha='center', color=current_edge_color) #
+
+    axes.legend()
+    plt.title(f"CIE 1931 Chromaticity Diagram: {label1} & {label2}") #
+    plt.grid(True) #
+    plt.show() #
 
 
 def GetPoints2020_lab(num_samples, device=None):

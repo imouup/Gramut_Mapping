@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib
@@ -450,6 +451,13 @@ def CIE2000(Lab1: torch.Tensor, Lab2: torch.Tensor, kL: float = 1.0, kC: float =
 
       return delta_E
 
+def fourier_encoding(x, B=16):
+    # x: [B,3] in [0,1]
+    bands = 2**torch.arange(B, device=x.device) * math.pi
+    x = x.unsqueeze(-1)  # [B,3,1]
+    pe = torch.cat([torch.sin(bands * x), torch.cos(bands * x)], dim=-1)
+    return pe.view(x.shape[0], -1)  # [B, 3*2*B]
+
 # # 你的函数名为 CIE2000，这里为了统一测试封装一下
 # def test_CIE2000():
 #     # 测试用例来自 Sharma et al. (2005)
@@ -498,6 +506,7 @@ class GamutMp_Dataset(Dataset):
 class MLP(nn.Module):
       def __init__(self):
             super(MLP,self).__init__()
+            self.B = 16
             self.proj = nn.Linear(3, 256)  # 1.投影层
             self.net = nn.Sequential(
                   nn.Linear(256, 256),  # 2.隐藏层1 256
@@ -524,16 +533,16 @@ class MLP(nn.Module):
                   nn.Sigmoid()
             )
       def forward(self,x):
-            out = self.proj(x)
+            out = self.proj(x) # 先做高频映射再投影
             out = self.net(out)
             return out
 
 # 训练主流程
 huber = nn.HuberLoss(delta=1.0)
 mse = torch.nn.MSELoss()
-alpha = 0.9
-beta_L = 0.05
-beta_hue = 0.05
+alpha = 1.0
+beta_L = 0.0
+beta_hue = 0.0
 
 def train_mlp(
     n_samples: int = 4096,
@@ -823,24 +832,24 @@ if __name__ == "__main__":
       srgb_to_xyz_mat = srgb_to_xyz_mat.to(device)
 
       # 训练
-      #train()
+      train()
 
       # 推理
-      pts = GetPoints(1000)
-      proj_pts,_ = filter(pts)
-      # direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
-      ckpt_path = "models/Q1/q1.pth" #模型路径
-
-      pjt,loss,delta_E = project(ckpt_path, proj_pts) # 送入MLP
-      # print("❤️ MLP映射结果:\n", pjt)
-      loss_95 = np.percentile(loss, 95, 0)
-      loss_mean = np.mean(loss, axis=0)
-      delta_E_mean = np.mean(delta_E,axis=0)
-      delta_E_95 = np.percentile(delta_E, 95, 0)
-      print(f'MLP的loss值的95分位数为: {loss_95}')
-      print(f'MLP平均loss为: {loss_mean}')
-      print(f'MLP平均delta_E为: {delta_E_mean}')
-      print(f'MLPdelta_E的95分位数为: {delta_E_95}')
+      # pts = GetPoints(1000)
+      # proj_pts,_ = filter(pts)
+      # # direct_pts = pts - proj_pts # 无需映射的点，这些点只需进行简单的坐标变换
+      # ckpt_path = "models/Q1/q1lab.pth" #模型路径
+      #
+      # pjt,loss,delta_E = project(ckpt_path, proj_pts) # 送入MLP
+      # # print("❤️ MLP映射结果:\n", pjt)
+      # loss_95 = np.percentile(loss, 95, 0)
+      # loss_mean = np.mean(loss, axis=0)
+      # delta_E_mean = np.mean(delta_E,axis=0)
+      # delta_E_95 = np.percentile(delta_E, 95, 0)
+      # print(f'MLP的loss值的95分位数为: {loss_95}')
+      # print(f'MLP平均loss为: {loss_mean}')
+      # print(f'MLP平均delta_E为: {delta_E_mean}')
+      # print(f'MLPdelta_E的95分位数为: {delta_E_95}')
 
 
 # ----------------------

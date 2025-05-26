@@ -380,7 +380,7 @@ class MLP_oss_only(nn.Module):
 # 训练主流程
 huber = nn.HuberLoss(delta=1.0)
 mse = torch.nn.MSELoss()
-alpha = 0.8
+alpha = 1.0
 
 def train_mlp_withflag(
     n_samples: int = 4096,
@@ -779,7 +779,7 @@ def project_mlp(ckpt_path, p4, network):
             loss = alpha * loss_de + (1 - alpha) * loss_m  # loss由CIEDE2000与MSE加权求得
             loss = loss.cpu().numpy()
 
-      return project_p5, loss
+      return project_p5, loss, delta_E.cpu().numpy()
 
 def project(p_num=1000):
 
@@ -792,19 +792,23 @@ def project(p_num=1000):
 
       flag0_pts, flag1_pts = filter(proj_pts_flags4)  # 需要传入mlp的四基色点
       print(f'共有{flag1_pts.shape[0]}个点越界，')
-      ckpt_path = "models/Q2/all/20250524_160416.pth"  # 模型路径
+      ckpt_path = "models/Q2/all/20250526_000442.pth"  # 模型路径
       ### 映射
-      pjt_mlp_flags, loss_mlp = project_mlp(ckpt_path, proj_pts_flags4, MLP_withflags)  # 越界点的五基色坐标
+      pjt_mlp_flags, loss_mlp, deltaE1 = project_mlp(ckpt_path, proj_pts_flags4, MLP_withflags)  # 越界点的五基色坐标
       ### 求moss
       #### 只有MLP的loss
       print('🍰以下是MLP的loss，也是整体的loss')
       loss_mlp_95 = np.percentile(loss_mlp, 95, 0)
       loss_mlp_99 = np.percentile(loss_mlp, 99, 0)
       loss_mlp_mean = np.mean(loss_mlp, axis=0)
+      deltaE1_mean = np.mean(deltaE1, axis=0)
+      deltaE1_95 = np.percentile(deltaE1, 95, 0)
       # print("❤️ 映射结果:\n", pjt_mlp)
       print(f'整体的loss值的95分位数为: {loss_mlp_95}')
       print(f'整体的loss值的99分位数为: {loss_mlp_99}')
       print(f'整体的平均loss为: {loss_mlp_mean}')
+      print(f'整体的平均deltaE为: {deltaE1_mean}')
+      print(f'整体的95分位deltaE为: {deltaE1_95}')
       ## 有标记 -----------<end>-----------
 
       ## 无标记 -----------<begin>-----------
@@ -815,10 +819,10 @@ def project(p_num=1000):
 
       _, mlp_pts = filter(proj_pts_flags4)  # 需要传入mlp的四基色点
       print(f'共有{mlp_pts.shape[0]}个点越界')
-      ckpt_path = "models/Q2/oss/20250524_162828.pth"  # 模型路径
+      ckpt_path = "models/Q2/oss/20250525_235630.pth"  # 模型路径
       ### 映射
       direct_pts, _ = filter(proj_pts_flags5)  # 没有越界的点的五基色下的坐标
-      pjt_mlp, loss_mlp = project_mlp(ckpt_path, proj_pts, MLP_oss_only)  # 越界点的五基色坐标
+      pjt_mlp, loss_mlp, deltaE2 = project_mlp(ckpt_path, proj_pts, MLP_oss_only)  # 越界点的五基色坐标
       ### 求moss
       #### 求最小二乘法的loss
       xyz_direct_pts = p52XYZ(direct_pts)  # 转为XYZ
@@ -844,8 +848,12 @@ def project(p_num=1000):
       loss_all = np.concatenate([loss_direct, loss_mlp])
       loss_all_mean = np.mean(loss_all, axis=0)
       loss_all_95 = np.percentile(loss_all, 95, 0)
+      deltaE2_mean = np.mean(deltaE2, axis=0)
+      deltaE2_95 = np.percentile(deltaE2, 95, 0)
       print(f'总体的loss值的95分位数为: {loss_all_95}')
       print(f'总体的平均loss为: {loss_all_mean}')
+      print(f'整体的平均deltaE为: {deltaE2_mean}')
+      print(f'整体的95分位deltaE为: {deltaE2_95}')
 
       ## 无标记 -----------<end>-----------
 
@@ -859,7 +867,8 @@ if __name__ == "__main__":
       XYZ4 = wavelength_2_xyz(four_bases)
       XYZ5 = wavelength_2_xyz(five_bases)
       # plot_xyz_color_vectors(XYZ5, five_bases)
-      # plot_gamut_on_chromaticity_diagram(XYZ5,five_bases)
+      # plot_gamut_on_chromaticity_diagram(XYZ5,five_bases,XYZ4,four_bases,'Five Bases','Four Bases')
+
 
       # D65 白点的 XYZ 值（归一化后 Yn=1.0）
       ref_X = 0.95047
